@@ -35,3 +35,19 @@ def test_format():
 
     # Rest of disk should not be touched. Format only clears bitmaps and first inode.
     assert formatted_disk[128:] == raw_disk[128:]
+
+
+def test_get_data_for_inode():
+    pass
+
+
+def test_parse_dir_data():
+    pass
+
+
+def test_serialize_dir_data():
+    pass
+
+
+def test_get_inode_block_from_dir_data():
+    pass

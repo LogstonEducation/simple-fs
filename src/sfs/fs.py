@@ -136,8 +136,14 @@ class MetadataMixin(BaseFS):
 
         return index + inode_start
 
+    def _get_inode_block(self, index: int) -> bytes:
+        return self._get_block(self._to_raw_block_index(index, data_block=False))
+
     def _set_inode_block(self, index: int, data: bytes):
         self._set_block(self._to_raw_block_index(index, data_block=False), data)
+
+    def _get_data_block(self, index: int) -> bytes:
+        return self._get_block(self._to_raw_block_index(index, data_block=True))
 
     def _set_data_block(self, index: int, data: bytes):
         self._set_block(self._to_raw_block_index(index, data_block=True), data)
@@ -162,6 +168,36 @@ class MetadataMixin(BaseFS):
         assert inode_block_index == 0
         self._set_inode_block(inode_block_index, inode.serialize())
 
+    def _get_data_for_inode(self, inode: INode) -> bytes:
+        data = bytearray()
+        for data_block_id in inode.data_blocks:
+            data.extend(self._get_data_block(data_block_id))
+        return data
+
+    def _parse_dir_data(self, data: bytes) -> dict:
+        return {data[i+1:i+8]: data[i] for i in range(0, len(data), 8)}
+
+    def _serialize_dir_data(self, data: dict) -> bytes:
+        b = bytearray()
+        for key, value in sorted(data.items()):
+            b.append(key)
+
+            if len(value) > 7:
+                raise SimpleFSError(f'File name "{value}" too long {len(value)}')
+
+            b.extend(value)
+            for _ in range(7 - len(value)):
+                b.append(0)
+
+        return bytes(b)
+
+    def _get_inode_block_from_dir_data(self, data: bytes, name: bytes) -> int:
+        for inode_block_index, file_name in self._parse_dir_data(data).items():
+            if name == file_name:
+                return inode_block_index
+
+        raise FileNotFoundError(name)
+
 
 class SimpleFS(MetadataMixin):
 
@@ -169,16 +205,17 @@ class SimpleFS(MetadataMixin):
         """
         Return an i-node (instead of a file descriptor) to the file referenced by "name".
         """
-        inode_block_index = 0  # Start at root node.
-        # While true
-        #   Read inode
-        #   If file type break
-        #   If dir, read contents of data blocks
-        #   Find inode index for name of file.
-        #       Inode index + file name + null terminator
-        #   if no file, raise FileNotFound error.
-        #   If file, return inode to file.
+        name = name.lstrip(b'/')
 
-        # Root is inode 0, directory contents of root are held in blocks identifeid by inode 0
+        inode_block_index = 0
+        while True:
+            inode = INode.parse(self._get_inode_block(inode_block_index))  # Start at root node.
+            if inode.file_type == FileType.REG:
+                return inode
 
-        return INode()
+            data = self._get_data_for_inode(inode)
+
+            name_part = name[:name.find(b'/')]
+            name = name[name.find(b'/')+1:]
+
+            inode_block_index = self._get_inode_block_from_dir_data(data, name_part)
