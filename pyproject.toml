@@ -1,0 +1,28 @@
+[tool.poetry]
+name = "sfs"
+version = "0.1.0"
+description = "A toy file system"
+authors = ["Paul Logston <paul.logston@gmail.com>"]
+license = "MIT"
+readme = "README.md"
+packages = [{include = "sfs", from = "src"}]
+
+[tool.poetry.dependencies]
+python = ">=3.8.1"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4.0"
+flake8 = "^6.0.0"
+coverage = "^7.2.7"
+pytest-cov = "^4.1.0"
+
+[tool.pytest.ini_options]
+addopts = [
+    "--import-mode=importlib",
+]
+
+pythonpath = "src"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
