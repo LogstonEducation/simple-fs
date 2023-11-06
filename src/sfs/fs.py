@@ -11,7 +11,6 @@ available.
 
 [1]
 """
-
 from .bitmap import Bitmap
 from .inode import FileType, INode
 
@@ -46,6 +45,11 @@ class BaseFS:
         """
         Set data at index. Pad data as required.
         """
+        if index * self.block_size >= len(self._raw_disk):
+            raise SimpleFSError(
+                f'Index too large ({index}) for disk size in blocks'
+            )
+
         if len(data) > self.block_size:
             raise SimpleFSError(
                 f'Data length too large ({len(data)}) for given block size ({self.block_size})'
@@ -128,7 +132,7 @@ class MetadataMixin(BaseFS):
             if index > data_block_count:
                 raise SimpleFSError(f'Index {index} out of range of data nodes')
 
-            return index + data_block
+            return index + data_block_start
 
         # Is INode
         if index > (data_block_start - inode_start):
@@ -147,6 +151,23 @@ class MetadataMixin(BaseFS):
 
     def _set_data_block(self, index: int, data: bytes):
         self._set_block(self._to_raw_block_index(index, data_block=True), data)
+
+    def print_disk(self):
+        for i in range(0, len(self._raw_disk), self.block_size):
+            block_data = self._raw_disk[i:i+self.block_size]
+            block = int(i / self.block_size)
+
+            block_type = 'DN'
+            if block == 0:
+                block_type = 'S '
+            elif block == 1:
+                block_type = 'IB'
+            elif block == 2:
+                block_type = 'DB'
+            elif block <= 10:
+                block_type = 'IN'
+
+            print(f'B {block} {block_type} >>', block_data, flush=True)
 
     def format(self):
         """
@@ -174,26 +195,33 @@ class MetadataMixin(BaseFS):
             data.extend(self._get_data_block(data_block_id))
         return data
 
-    def _parse_dir_data(self, data: bytes) -> dict:
-        return {data[i+1:i+8]: data[i] for i in range(0, len(data), 8)}
+    @staticmethod
+    def _parse_dir_data(data: bytes) -> dict:
+        inode_index_by_name = {}
+        for i in range(0, len(data), 8):
+            if not data[i]:
+                break
+            inode_index_by_name[bytes(data[i+1:i+8])] = data[i]
+        return inode_index_by_name
 
-    def _serialize_dir_data(self, data: dict) -> bytes:
+    @staticmethod
+    def _serialize_dir_data(data: dict) -> bytes:
         b = bytearray()
         for key, value in sorted(data.items()):
-            b.append(key)
+            if len(key) > 7:
+                raise SimpleFSError(f'File name "{key}" too long {len(key)}')
 
-            if len(value) > 7:
-                raise SimpleFSError(f'File name "{value}" too long {len(value)}')
+            b.append(value)
 
-            b.extend(value)
-            for _ in range(7 - len(value)):
+            b.extend(key)
+            for _ in range(7 - len(key)):
                 b.append(0)
 
         return bytes(b)
 
     def _get_inode_block_from_dir_data(self, data: bytes, name: bytes) -> int:
-        for inode_block_index, file_name in self._parse_dir_data(data).items():
-            if name == file_name:
+        for file_name, inode_block_index in self._parse_dir_data(data).items():
+            if name == file_name[:len(name)]:
                 return inode_block_index
 
         raise FileNotFoundError(name)

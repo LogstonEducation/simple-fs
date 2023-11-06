@@ -1,9 +1,10 @@
 import pytest
 
 from sfs.fs import MetadataMixin
+from sfs.inode import INode
 
 
-def get_raw_disk(blocks=10, block_size=32) -> bytearray:
+def get_raw_disk(blocks=100, block_size=32) -> bytearray:
     b = bytearray()
 
     for i in range(blocks):
@@ -38,16 +39,59 @@ def test_format():
 
 
 def test_get_data_for_inode():
-    pass
+    raw_disk = get_raw_disk() + bytearray(0 for _ in range(32*32))
+    fs = MetadataMixin(raw_disk)
+    fs.format()
+
+    fs._set_data_block(3, bytes(b'Hi'))
+    fs._set_data_block(5, bytes(b'Hello'))
+
+    inode = INode()
+    inode.data_blocks = [3, 5]
+
+    data = fs._get_data_for_inode(inode)
+
+    assert data[0:2] == b'Hi'
+    assert data[32:37] == b'Hello'
 
 
 def test_parse_dir_data():
-    pass
+    raw_disk = get_raw_disk()
+    fs = MetadataMixin(raw_disk)
+    fs.format()
+
+    data = bytearray(0 for _ in range(32))
+    data[0] = 47
+    data[1:8] = b'TESTFIL'
+    data[8] = 48
+    data[9:16] = b'ANOTHER'
+
+    inode_index_by_name = fs._parse_dir_data(data)
+    assert inode_index_by_name == {b'ANOTHER': 48, b'TESTFIL': 47}
 
 
 def test_serialize_dir_data():
-    pass
+    raw_disk = get_raw_disk()
+    fs = MetadataMixin(raw_disk)
+    fs.format()
+
+    data = fs._serialize_dir_data({b'ANOTHER': 93, b'TESTFIL': 94})
+    assert data == b']ANOTHER^TESTFIL'
 
 
 def test_get_inode_block_from_dir_data():
-    pass
+    raw_disk = get_raw_disk()
+    fs = MetadataMixin(raw_disk)
+    fs.format()
+
+    data = bytearray(0 for _ in range(32))
+    data[0] = 21
+    data[1:8] = b'TESTFIL'
+    data[8] = 93
+    data[9:16] = b'ANOTH\x00\x00'
+
+    assert fs._get_inode_block_from_dir_data(data, b'TESTFIL') == 21
+    assert fs._get_inode_block_from_dir_data(data, b'ANOTH') == 93
+
+    with pytest.raises(FileNotFoundError):
+        fs._get_inode_block_from_dir_data(data, b'JAZZ')
