@@ -11,6 +11,8 @@ available.
 
 [1]
 """
+import math
+
 from .bitmap import Bitmap
 from .inode import FileType, INode
 
@@ -195,6 +197,25 @@ class MetadataMixin(BaseFS):
             data.extend(self._get_data_block(data_block_id))
         return data
 
+    def _set_data_for_inode(self, inode: INode, data: bytes):
+        data_blocks_required = math.ceil(len(data) / self.block_size)
+        data_blocks_to_aquire = data_blocks_required - len(inode.data_blocks)
+        if data_blocks_to_aquire > 0:
+            # get new blocks
+            for _ in range(data_blocks_to_aquire):
+                inode.data_blocks.append(self.data_node_bitmap.next())
+
+        elif data_blocks_to_aquire < 0:
+            # Release blocks
+            for _ in range(-1 * data_blocks_to_aquire):
+                self.data_node_bitmap.release(inode.data_blocks[-1])
+                inode.data_blocks = inode.data_blocks[:-1]
+
+        j = 0
+        for i in range(0, len(data), self.block_size):
+            self._set_data_block(inode.data_blocks[j], data[i:i+self.block_size])
+            j += 1
+
     @staticmethod
     def _parse_dir_data(data: bytes) -> dict:
         inode_index_by_name = {}
@@ -243,7 +264,9 @@ class SimpleFS(MetadataMixin):
 
             data = self._get_data_for_inode(inode)
 
-            name_part = name[:name.find(b'/')]
-            name = name[name.find(b'/')+1:]
+            name_part = name
+            if name.find(b'/') > -1:
+                name_part = name[:name.find(b'/')]
+                name = name[name.find(b'/')+1:]
 
             inode_block_index = self._get_inode_block_from_dir_data(data, name_part)
