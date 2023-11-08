@@ -3,13 +3,11 @@ A very Simple File System (SFS).
 
 Based off of the contents of Chapter 40 in OSTEP [1].
 
-
 The file system is made up of a super block, several blocks of index nodes
 (inodes), even more blocks of data, and bitmaps to indicate which blocks are
 available.
 
-
-[1]
+[1] Operating Systems: Three Easy Pieces, Remzi H. Arpaci-Dusseau and Andrea C. Arpaci-Dusseau, Arpaci-Dusseau Books, November, 2023 (Version 1.10) 
 """
 import math
 
