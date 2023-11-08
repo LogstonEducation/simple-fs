@@ -90,8 +90,8 @@ def test_get_inode_block_from_dir_data():
     data[8] = 93
     data[9:16] = b'ANOTH\x00\x00'
 
-    assert fs._get_inode_block_from_dir_data(data, b'TESTFIL') == 21
-    assert fs._get_inode_block_from_dir_data(data, b'ANOTH') == 93
+    assert fs._get_inode_index_for_file_from_dir_data(data, b'TESTFIL') == 21
+    assert fs._get_inode_index_for_file_from_dir_data(data, b'ANOTH') == 93
 
     with pytest.raises(FileNotFoundError):
-        fs._get_inode_block_from_dir_data(data, b'JAZZ')
+        fs._get_inode_index_for_file_from_dir_data(data, b'JAZZ')

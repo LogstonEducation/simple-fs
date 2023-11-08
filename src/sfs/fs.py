@@ -240,17 +240,32 @@ class MetadataMixin(BaseFS):
 
         return bytes(b)
 
-    def _get_inode_block_from_dir_data(self, data: bytes, name: bytes) -> int:
+    def _get_inode_index_for_file_from_dir_data(self, data: bytes, name: bytes) -> int:
         for file_name, inode_block_index in self._parse_dir_data(data).items():
             if name == file_name[:len(name)]:
                 return inode_block_index
 
         raise FileNotFoundError(name)
 
+    def _touch_in_dir(self, dir_inode_index: int, name: bytes, file_type=FileType.REG) -> int:
+        # Create INode for item.
+        inode = INode(file_type=file_type)
+        inode_index = self.index_node_bitmap.next()
+        self._set_inode_block(inode_index, inode.serialize())
+
+        # Add item to parent dir's data.
+        pinode = INode.parse(self._get_inode_block(dir_inode_index))
+        inode_index_by_name = self._parse_dir_data(self._get_data_for_inode(pinode))
+        inode_index_by_name[name] = inode_index
+        self._set_data_for_inode(pinode, self._serialize_dir_data(inode_index_by_name))
+        self._set_inode_block(dir_inode_index, pinode.serialize())
+
+        return inode_index
+
 
 class SimpleFS(MetadataMixin):
 
-    def open(self, name: bytes) -> INode:
+    def open(self, name: bytes, write=False) -> int:
         """
         Return an i-node (instead of a file descriptor) to the file referenced by "name".
         """
@@ -260,7 +275,7 @@ class SimpleFS(MetadataMixin):
         while True:
             inode = INode.parse(self._get_inode_block(inode_block_index))  # Start at root node.
             if inode.file_type == FileType.REG:
-                return inode
+                return inode_block_index
 
             data = self._get_data_for_inode(inode)
 
@@ -269,4 +284,33 @@ class SimpleFS(MetadataMixin):
                 name_part = name[:name.find(b'/')]
                 name = name[name.find(b'/')+1:]
 
-            inode_block_index = self._get_inode_block_from_dir_data(data, name_part)
+            try:
+                inode_block_index = self._get_inode_index_for_file_from_dir_data(data, name_part)
+            except FileNotFoundError as e:
+                if not write:
+                    raise e
+
+                # If no more parts in name, consider a file to create.
+                file_type = FileType.REG if name.find(b'/') == -1 else FileType.DIR
+                inode_block_index = self._touch_in_dir(inode_block_index, name, file_type)
+
+    def read(self, inode_index: int) -> bytes:
+        """
+        Return a series of bytes from a given i-node.
+        """
+        inode = INode.parse(self._get_inode_block(inode_index))
+        data = self._get_data_for_inode(inode)
+        i = 0
+        while i < len(data):
+            if data[i] == 0:
+                break
+            i += 1
+        return bytes(data[:i])
+
+    def write(self, inode_index: int, data: bytes):
+        """
+        Write a series of bytes to disk given an i-node.
+        """
+        inode = INode.parse(self._get_inode_block(inode_index))
+        self._set_data_for_inode(inode, data)
+        self._set_inode_block(inode_index, inode.serialize())
